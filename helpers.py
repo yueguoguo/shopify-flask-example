@@ -11,11 +11,14 @@ from flask import request, abort
 
 from dotenv import load_dotenv
 
+import shopify
+
 load_dotenv()
 SHOPIFY_SECRET = os.environ.get('SHOPIFY_SECRET')
 SHOPIFY_API_KEY = os.environ.get('SHOPIFY_API_KEY')
 INSTALL_REDIRECT_URL = os.environ.get('INSTALL_REDIRECT_URL')
 APP_NAME = os.environ.get('APP_NAME')
+
 
 def generate_install_redirect_url(shop: str, scopes: List, nonce: str, access_mode: List):
     scopes_string = ','.join(scopes)
@@ -75,3 +78,14 @@ def is_valid_shop(shop: str) -> bool:
     # Shopify docs give regex with protocol required, but shop never includes protocol
     shopname_regex = r'[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com[\/]?'
     return re.match(shopname_regex, shop)
+
+
+def get_products(shop: str, token: str) -> List: 
+    """
+    Get products by calling API
+    """
+    # with shopify.Session.temp(f"{shop}.myshopify.com", token):
+    with shopify.Session.temp(shop, token):
+        product = shopify.Product.find()
+
+    return product

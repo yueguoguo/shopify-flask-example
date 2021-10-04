@@ -3,9 +3,24 @@ import os
 import json
 import logging
 
-from flask import Flask, redirect, request, render_template
+from flask import (
+    Flask,
+    redirect,
+    request,
+    render_template,
+    url_for,
+    session
+)
 
+import shopify
 import helpers
+from gmail import (
+    setup_account,
+    create_draft,
+    create_message,
+    send_message,
+    MESSAGE
+)
 from shopify_client import ShopifyStoreClient
 
 from dotenv import load_dotenv
@@ -16,27 +31,108 @@ print('webhook', WEBHOOK_APP_UNINSTALL_URL)
 
 
 app = Flask(__name__)
+app.secret_key = 'dljsaklqk24e21cjn!Ew@@dsa5'
 
 
+API_VERSION = "2020-10"
 ACCESS_TOKEN = None
 NONCE = None
-ACCESS_MODE = []  # Defaults to offline access mode if left blank or omitted. https://shopify.dev/concepts/about-apis/authentication#api-access-modes
-SCOPES = ['write_script_tags']  # https://shopify.dev/docs/admin-api/access-scopes
+# Defaults to offline access mode if left blank or omitted. https://shopify.dev/concepts/about-apis/authentication#api-access-modes
+ACCESS_MODE = []  
+# https://shopify.dev/docs/admin-api/access-scopes
+SCOPES = [
+    'write_script_tags',
+    'write_customers',
+    'write_products',
+    'write_orders',
+    'read_products',
+    'read_orders',
+    'read_customers'
+]  
+
+
+@app.route('/logout')
+def shopify_app_logout():
+    return redirect(url_for('app_launched'))
+
+
+@app.route('/')
+def root_path():
+    return redirect(url_for('app_launched'))
+
+
+@app.route("/send_email")
+def send_email():
+    """Function to send email to the recipient.
+    """
+    global ACCESS_TOKEN, NONCE
+
+    shop = session.get("shop")
+    product_count = session.get("product_count")
+    product_title_1 = session.get("product_title_1")
+    product_title_2 = session.get("product_title_2")
+    product_title_3 = session.get("product_title_3")
+
+    message_text = MESSAGE.format(
+        customer="YJ",
+        shop=shop,
+        product_count=product_count,
+        product_title_1=product_title_1,
+        product_title_2=product_title_2,
+        product_title_3=product_title_3
+    )
+
+    message_body = create_message(
+        sender="yueguoguo2048@gmail.com",
+        to="fanmd104@gmail.com",
+        subject="Greeting from FromAir",
+        message_text=message_text
+    )
+
+    service = setup_account()
+    send_message(service=service, user_id="me", message=message_body)
+
+    NONCE = uuid.uuid4().hex
+    redirect_url = helpers.generate_install_redirect_url(
+        shop=shop,
+        scopes=SCOPES,
+        nonce=NONCE,
+        access_mode=ACCESS_MODE
+    )
+
+    return redirect(redirect_url, code=302)
 
 
 @app.route('/app_launched', methods=['GET'])
 @helpers.verify_web_call
 def app_launched():
+    """Function to launch the app home page
+    """
     shop = request.args.get('shop')
     global ACCESS_TOKEN, NONCE
 
     if ACCESS_TOKEN:
-        return render_template('welcome.html', shop=shop)
+        with shopify.Session.temp(shop, API_VERSION, str(ACCESS_TOKEN)):
+            products = shopify.Product.find(limit=3)
+
+        session["shop"] = shop
+        session["product_count"] =  len(products)
+        session["product_title_1"] = products[0].title
+        session["product_title_2"] = products[1].title
+        session["product_title_3"] = products[2].title
+
+        return render_template('products.html', products=products, token=str(ACCESS_TOKEN))
 
     # The NONCE is a single-use random value we send to Shopify so we know the next call from Shopify is valid (see #app_installed)
     #   https://en.wikipedia.org/wiki/Cryptographic_nonce
     NONCE = uuid.uuid4().hex
-    redirect_url = helpers.generate_install_redirect_url(shop=shop, scopes=SCOPES, nonce=NONCE, access_mode=ACCESS_MODE)
+    redirect_url = helpers.generate_install_redirect_url(
+        shop=shop,
+        scopes=SCOPES,
+        nonce=NONCE,
+        access_mode=ACCESS_MODE
+    )
+
     return redirect(redirect_url, code=302)
 
 
